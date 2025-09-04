@@ -44,6 +44,9 @@ This guide will help you deploy your Instagram Bot to **Render** (backend) and *
    - **Start Command**: `uvicorn backend:app --host 0.0.0.0 --port $PORT`
    - **Plan**: `Free`
 
+   **Note**: If you encounter dependency conflicts, use `requirements-flexible.txt` instead:
+   - **Build Command**: `pip install -r requirements-flexible.txt`
+
 6. **Click "Create Web Service"**
 7. **Wait for deployment** (5-10 minutes)
 8. **Copy your service URL** (e.g., `https://instagram-bot-backend.onrender.com`)
@@ -180,12 +183,17 @@ This guide will help you deploy your Instagram Bot to **Render** (backend) and *
    - Look at the logs in Render dashboard
    - Ensure all dependencies are in `requirements.txt`
 
-2. **CORS Errors:**
+2. **Dependency Conflict Errors:**
+   - If you see pydantic version conflicts, use `requirements-flexible.txt`
+   - Update build command to: `pip install -r requirements-flexible.txt`
+   - This uses compatible versions of FastAPI and pydantic
+
+3. **CORS Errors:**
    - Update CORS settings in `backend.py`
    - Add your Vercel URL to allowed origins
    - Redeploy the backend
 
-3. **Instagram Login Fails:**
+4. **Instagram Login Fails:**
    - Check if 2FA is disabled on your Instagram account
    - Try logging in manually on Instagram first
    - Check the logs for specific error messages
