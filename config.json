@@ -1,0 +1,19 @@
+{
+  "instagram": {
+    "username": "your_instagram_username",
+    "password": "your_instagram_password"
+  },
+  "message": {
+    "text": "Hello! This is an automated message from my bot. Hope you're doing well! 😊",
+    "delay_range": [30, 60]
+  },
+  "files": {
+    "usernames_file": "usernames.txt",
+    "results_file": "message_results.json",
+    "session_file": "session_{username}.json"
+  },
+  "settings": {
+    "max_retries": 3,
+    "log_level": "INFO"
+  }
+}

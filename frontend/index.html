@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Messaging Bot</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <i class="fab fa-instagram"></i>
+                <h1>Instagram Bot</h1>
+            </div>
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot offline"></span>
+                <span id="statusText">Offline</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Login Section -->
+            <section class="login-section" id="loginSection">
+                <div class="card">
+                    <h2>Login to Instagram</h2>
+                    <p class="subtitle">Choose your preferred login method</p>
+                    
+                    <!-- Instagram Credentials Login -->
+                    <div class="login-method active" id="instagramLogin">
+                        <div class="method-header">
+                            <i class="fab fa-instagram"></i>
+                            <h3>Instagram Credentials</h3>
+                        </div>
+                        <form id="loginForm" class="login-form">
+                            <div class="input-group">
+                                <label for="username">Username</label>
+                                <input type="text" id="username" name="username" placeholder="Enter your Instagram username" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="password">Password</label>
+                                <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="loginBtn">
+                                <i class="fas fa-sign-in-alt"></i>
+                                Login
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Alternative Login Methods -->
+                    <div class="alternative-login">
+                        <div class="divider">
+                            <span>OR</span>
+                        </div>
+                        
+                        <div class="social-login">
+                            <button class="btn btn-social facebook" id="facebookLogin" disabled>
+                                <i class="fab fa-facebook-f"></i>
+                                Login with Facebook
+                                <small>(Coming Soon)</small>
+                            </button>
+                            <button class="btn btn-social google" id="googleLogin" disabled>
+                                <i class="fab fa-google"></i>
+                                Login with Google
+                                <small>(Coming Soon)</small>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Dashboard Section -->
+            <section class="dashboard-section" id="dashboardSection" style="display: none;">
+                <div class="dashboard-header">
+                    <div class="user-info">
+                        <i class="fab fa-instagram"></i>
+                        <div>
+                            <h3 id="loggedInUser">@username</h3>
+                            <p>Logged in successfully</p>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary" id="logoutBtn">
+                        <i class="fas fa-sign-out-alt"></i>
+                        Logout
+                    </button>
+                </div>
+
+                <!-- Message Configuration -->
+                <div class="card">
+                    <h3>Message Configuration</h3>
+                    <div class="form-group">
+                        <label for="messageText">Message to Send</label>
+                        <textarea id="messageText" placeholder="Enter your message here..." rows="4"></textarea>
+                        <small>Character count: <span id="charCount">0</span></small>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="delayMin">Min Delay (seconds)</label>
+                            <input type="number" id="delayMin" value="30" min="10" max="300">
+                        </div>
+                        <div class="form-group">
+                            <label for="delayMax">Max Delay (seconds)</label>
+                            <input type="number" id="delayMax" value="60" min="10" max="300">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Usernames Management -->
+                <div class="card">
+                    <h3>Target Usernames</h3>
+                    <div class="usernames-container">
+                        <div class="input-group">
+                            <label for="usernamesInput">Add Usernames (one per line)</label>
+                            <textarea id="usernamesInput" placeholder="username1&#10;username2&#10;username3" rows="6"></textarea>
+                        </div>
+                        <div class="usernames-actions">
+                            <button class="btn btn-secondary" id="loadUsernamesBtn">
+                                <i class="fas fa-upload"></i>
+                                Load Usernames
+                            </button>
+                            <button class="btn btn-primary" id="sendMessagesBtn" disabled>
+                                <i class="fas fa-paper-plane"></i>
+                                Send Messages
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Section -->
+                <div class="card" id="progressCard" style="display: none;">
+                    <h3>Message Progress</h3>
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span id="progressText">0 / 0</span>
+                            <span id="progressPercent">0%</span>
+                        </div>
+                    </div>
+                    <div class="current-message" id="currentMessage">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Preparing to send messages...</span>
+                    </div>
+                </div>
+
+                <!-- Results Section -->
+                <div class="card" id="resultsCard" style="display: none;">
+                    <h3>Message Results</h3>
+                    <div class="results-summary">
+                        <div class="result-stat success">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Successful: <strong id="successCount">0</strong></span>
+                        </div>
+                        <div class="result-stat error">
+                            <i class="fas fa-times-circle"></i>
+                            <span>Failed: <strong id="errorCount">0</strong></span>
+                        </div>
+                    </div>
+                    <div class="results-list" id="resultsList">
+                        <!-- Results will be populated here -->
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2024 Instagram Bot. Use responsibly and in compliance with Instagram's Terms of Service.</p>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p id="loadingText">Loading...</p>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
