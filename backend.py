@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 class LoginRequest(BaseModel):
     username: str = Field(..., description="Instagram username")
     password: str = Field(..., description="Instagram password")
+    verification_code: Optional[str] = Field(None, description="Verification code if required")
+    challenge_url: Optional[str] = Field(None, description="Challenge URL if verification is required")
 
 class MessageRequest(BaseModel):
     usernames: List[str] = Field(..., description="List of usernames to message")
@@ -44,10 +46,18 @@ class MessageResult(BaseModel):
     success: bool
     error: Optional[str] = None
 
+class ChallengeResponse(BaseModel):
+    requires_verification: bool
+    challenge_type: str
+    challenge_url: Optional[str] = None
+    phone_number: Optional[str] = None
+    message: str
+
 class BotResponse(BaseModel):
     success: bool
     message: str
     data: Optional[Any] = None
+    challenge: Optional[ChallengeResponse] = None
 
 # Global bot instance
 bot_instance = None
@@ -85,7 +95,7 @@ class InstagramBotManager:
         self.username = None
         self.session_file = None
         
-    async def login(self, username: str, password: str) -> bool:
+    async def login(self, username: str, password: str, verification_code: Optional[str] = None, challenge_url: Optional[str] = None) -> tuple[bool, Optional[ChallengeResponse]]:
         """Login to Instagram account."""
         try:
             logger.info(f"Attempting to login as {username}...")
@@ -115,18 +125,27 @@ class InstagramBotManager:
             bot_status.last_activity = datetime.now().isoformat()
             
             logger.info("Successfully logged in!")
-            return True
+            return True, None
             
         except ChallengeRequired as e:
-            logger.error(f"Challenge required: {e}")
-            error_detail = (
-                "Instagram requires additional verification. Please:\n"
-                "1. Log into Instagram on your phone or web browser\n"
-                "2. Complete any verification steps (phone, email, etc.)\n"
-                "3. Try logging in again after verification\n"
-                f"Challenge type: {getattr(e, 'challenge_type', 'Unknown')}"
+            logger.info(f"Challenge required: {e}")
+            challenge_info = getattr(e, 'challenge_info', {})
+            challenge_type = getattr(e, 'challenge_type', 'Unknown')
+            
+            # Extract phone number if available
+            phone_number = None
+            if hasattr(e, 'challenge_info') and isinstance(e.challenge_info, dict):
+                phone_number = e.challenge_info.get('phone_number', None)
+            
+            challenge_response = ChallengeResponse(
+                requires_verification=True,
+                challenge_type=challenge_type,
+                challenge_url=str(e) if hasattr(e, '__str__') else None,
+                phone_number=phone_number,
+                message=f"Instagram requires {challenge_type} verification"
             )
-            raise HTTPException(status_code=400, detail=error_detail)
+            
+            return False, challenge_response
         except LoginRequired as e:
             logger.error("Login required. Please check your credentials.")
             raise HTTPException(status_code=401, detail="Invalid credentials. Please check your username and password.")
@@ -136,14 +155,14 @@ class InstagramBotManager:
             
             # Handle specific challenge resolver errors
             if "ChallengeResolve" in error_msg and "Unknown step_name" in error_msg:
-                error_detail = (
-                    "Instagram requires phone verification that this bot cannot handle automatically. Please:\n"
-                    "1. Log into Instagram on your phone or web browser\n"
-                    "2. Complete the phone verification process\n"
-                    "3. Wait a few minutes and try logging in again\n"
-                    "This is a security measure to protect your account."
+                challenge_response = ChallengeResponse(
+                    requires_verification=True,
+                    challenge_type="Phone Verification",
+                    challenge_url=None,
+                    phone_number=None,
+                    message="Instagram requires phone verification. Please complete verification on your phone and try again."
                 )
-                raise HTTPException(status_code=400, detail=error_detail)
+                return False, challenge_response
             
             raise HTTPException(status_code=500, detail=f"Login failed: {error_msg}")
     
@@ -224,12 +243,24 @@ async def get_bot_status():
 async def login(request: LoginRequest):
     """Login to Instagram account."""
     try:
-        success = await bot_manager.login(request.username, request.password)
+        success, challenge = await bot_manager.login(
+            request.username, 
+            request.password, 
+            request.verification_code,
+            request.challenge_url
+        )
+        
         if success:
             return BotResponse(
                 success=True,
                 message="Successfully logged in!",
                 data={"username": request.username}
+            )
+        elif challenge:
+            return BotResponse(
+                success=False,
+                message=challenge.message,
+                challenge=challenge
             )
         else:
             return BotResponse(

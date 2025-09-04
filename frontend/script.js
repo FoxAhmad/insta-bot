@@ -27,6 +27,13 @@ const resultsCard = document.getElementById('resultsCard');
 const loadingOverlay = document.getElementById('loadingOverlay');
 const toastContainer = document.getElementById('toastContainer');
 
+// Verification elements
+const verificationSection = document.getElementById('verificationSection');
+const verificationCode = document.getElementById('verificationCode');
+const verificationMessage = document.getElementById('verificationMessage');
+const phoneInfo = document.getElementById('phoneInfo');
+const loginBtnText = document.getElementById('loginBtnText');
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
@@ -52,6 +59,21 @@ function initializeApp() {
         const hasUsernames = usernamesInput.value.trim().split('\n').filter(u => u.trim()).length > 0;
         const hasMessage = this.value.trim().length > 0;
         sendMessagesBtn.disabled = !(hasUsernames && hasMessage && isLoggedIn);
+    });
+    
+    // Verification code input validation
+    verificationCode.addEventListener('input', function() {
+        // Only allow numbers
+        this.value = this.value.replace(/[^0-9]/g, '');
+        
+        // Auto-submit when 6 digits are entered
+        if (this.value.length === 6) {
+            setTimeout(() => {
+                if (this.value.length === 6) {
+                    loginForm.dispatchEvent(new Event('submit'));
+                }
+            }, 500);
+        }
     });
 }
 
@@ -107,6 +129,7 @@ async function handleLogin(e) {
     
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value;
+    const verificationCodeValue = verificationCode.value.trim();
     
     if (!username || !password) {
         showToast('Please enter both username and password', 'error');
@@ -116,12 +139,19 @@ async function handleLogin(e) {
     showLoading('Logging in...');
     
     try {
+        const requestBody = { username, password };
+        
+        // Add verification code if provided
+        if (verificationCodeValue) {
+            requestBody.verification_code = verificationCodeValue;
+        }
+        
         const response = await fetch(`${API_BASE_URL}/api/login`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify(requestBody)
         });
         
         const result = await response.json();
@@ -131,7 +161,12 @@ async function handleLogin(e) {
             currentUser = username;
             showDashboard();
             updateStatusIndicator(true);
+            hideVerificationSection();
             showToast('Successfully logged in!', 'success');
+        } else if (result.challenge && result.challenge.requires_verification) {
+            // Show verification section
+            showVerificationSection(result.challenge);
+            showToast(result.message, 'info');
         } else {
             showToast(result.message || 'Login failed', 'error');
         }
@@ -272,6 +307,35 @@ function showDashboard() {
 function showLogin() {
     loginSection.style.display = 'block';
     dashboardSection.style.display = 'none';
+    hideVerificationSection();
+}
+
+// Show verification section
+function showVerificationSection(challenge) {
+    verificationSection.style.display = 'block';
+    verificationMessage.textContent = challenge.message;
+    
+    // Update phone info if available
+    if (challenge.phone_number) {
+        phoneInfo.textContent = `Code sent to: ${challenge.phone_number}`;
+        phoneInfo.style.display = 'block';
+    } else {
+        phoneInfo.style.display = 'none';
+    }
+    
+    // Update button text
+    loginBtnText.textContent = 'Verify & Login';
+    
+    // Focus on verification code input
+    verificationCode.focus();
+}
+
+// Hide verification section
+function hideVerificationSection() {
+    verificationSection.style.display = 'none';
+    verificationCode.value = '';
+    loginBtnText.textContent = 'Login';
+    phoneInfo.style.display = 'none';
 }
 
 // Update status indicator

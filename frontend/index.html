@@ -16,10 +16,10 @@
                 <i class="fab fa-instagram"></i>
                 <h1>Instagram Bot</h1>
             </div>
-            <div class="status-indicator" id="statusIndicator">
+            <!-- <div class="status-indicator" id="statusIndicator">
                 <span class="status-dot offline"></span>
                 <span id="statusText">Offline</span>
-            </div>
+            </div> -->
         </header>
 
         <!-- Main Content -->
@@ -45,9 +45,27 @@
                                 <label for="password">Password</label>
                                 <input type="password" id="password" name="password" placeholder="Enter your password" required>
                             </div>
+                            
+                            <!-- Verification Code Section (hidden by default) -->
+                            <div class="verification-section" id="verificationSection" style="display: none;">
+                                <div class="verification-info">
+                                    <i class="fas fa-shield-alt"></i>
+                                    <div>
+                                        <h4>Verification Required</h4>
+                                        <p id="verificationMessage">Instagram requires additional verification</p>
+                                        <p class="phone-info" id="phoneInfo" style="display: none;"></p>
+                                    </div>
+                                </div>
+                                <div class="input-group">
+                                    <label for="verificationCode">Verification Code</label>
+                                    <input type="text" id="verificationCode" name="verificationCode" placeholder="Enter verification code" maxlength="6">
+                                    <small>Check your phone for the verification code</small>
+                                </div>
+                            </div>
+                            
                             <button type="submit" class="btn btn-primary" id="loginBtn">
                                 <i class="fas fa-sign-in-alt"></i>
-                                Login
+                                <span id="loginBtnText">Login</span>
                             </button>
                         </form>
                     </div>
