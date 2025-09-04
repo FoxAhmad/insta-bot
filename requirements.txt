@@ -2,6 +2,10 @@
 instagrapi==2.0.0
 requests>=2.25.1
 cryptography>=3.4.8
+Pillow>=8.1.1
+moviepy>=1.0.3
+opencv-python>=4.5.0
+numpy>=1.21.0
 
 # FastAPI Web Backend Dependencies (compatible with instagrapi)
 fastapi==0.95.2
