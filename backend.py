@@ -118,14 +118,34 @@ class InstagramBotManager:
             return True
             
         except ChallengeRequired as e:
-            logger.error("Challenge required. Please check your Instagram account for verification.")
-            raise HTTPException(status_code=400, detail="Challenge required. Please verify your account on Instagram.")
+            logger.error(f"Challenge required: {e}")
+            error_detail = (
+                "Instagram requires additional verification. Please:\n"
+                "1. Log into Instagram on your phone or web browser\n"
+                "2. Complete any verification steps (phone, email, etc.)\n"
+                "3. Try logging in again after verification\n"
+                f"Challenge type: {getattr(e, 'challenge_type', 'Unknown')}"
+            )
+            raise HTTPException(status_code=400, detail=error_detail)
         except LoginRequired as e:
             logger.error("Login required. Please check your credentials.")
             raise HTTPException(status_code=401, detail="Invalid credentials. Please check your username and password.")
         except Exception as e:
             logger.error(f"Login failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+            error_msg = str(e)
+            
+            # Handle specific challenge resolver errors
+            if "ChallengeResolve" in error_msg and "Unknown step_name" in error_msg:
+                error_detail = (
+                    "Instagram requires phone verification that this bot cannot handle automatically. Please:\n"
+                    "1. Log into Instagram on your phone or web browser\n"
+                    "2. Complete the phone verification process\n"
+                    "3. Wait a few minutes and try logging in again\n"
+                    "This is a security measure to protect your account."
+                )
+                raise HTTPException(status_code=400, detail=error_detail)
+            
+            raise HTTPException(status_code=500, detail=f"Login failed: {error_msg}")
     
     async def get_user_id(self, username: str) -> Optional[str]:
         """Get user ID from username."""
