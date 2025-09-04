@@ -1,5 +1,5 @@
 // Configuration - Update this with your deployed backend URL
-const API_BASE_URL = 'https://your-backend-url.onrender.com'; // Replace with your actual Render URL
+const API_BASE_URL = 'https://instagram-bot-backend-3sk5.onrender.com'; // Replace with your actual Render URL
 
 // Global state
 let isLoggedIn = false;
