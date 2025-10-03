@@ -4,6 +4,7 @@ const API_BASE_URL = 'https://instagram-bot-backend-3sk5.onrender.com'; // Repla
 // Global state
 let isLoggedIn = false;
 let currentUser = null;
+let currentSessionId = null;
 let messageProgress = {
     current: 0,
     total: 0,
@@ -104,18 +105,35 @@ function setupEventListeners() {
 // Check bot status on page load
 async function checkBotStatus() {
     try {
-        const response = await fetch(`${API_BASE_URL}/api/status`);
-        const status = await response.json();
+        // Check if we have a session ID in localStorage
+        const savedSessionId = localStorage.getItem('session_id');
         
-        if (status.is_logged_in) {
-            isLoggedIn = true;
-            currentUser = status.username;
-            showDashboard();
-            updateStatusIndicator(true);
-        } else {
-            showLogin();
-            updateStatusIndicator(false);
+        if (savedSessionId) {
+            const response = await fetch(`${API_BASE_URL}/api/status`, {
+                credentials: 'include',
+                headers: {
+                    'Cookie': `session_id=${savedSessionId}`
+                }
+            });
+            const status = await response.json();
+            
+            if (status.is_logged_in) {
+                isLoggedIn = true;
+                currentUser = status.username;
+                currentSessionId = savedSessionId;
+                showDashboard();
+                updateStatusIndicator(true);
+                return;
+            } else {
+                // Session expired or invalid
+                localStorage.removeItem('session_id');
+                currentSessionId = null;
+            }
         }
+        
+        // No valid session found
+        showLogin();
+        updateStatusIndicator(false);
     } catch (error) {
         console.error('Error checking bot status:', error);
         updateStatusIndicator(false);
@@ -159,6 +177,11 @@ async function handleLogin(e) {
         if (result.success) {
             isLoggedIn = true;
             currentUser = username;
+            currentSessionId = result.data.session_id;
+            
+            // Save session ID to localStorage
+            localStorage.setItem('session_id', currentSessionId);
+            
             showDashboard();
             updateStatusIndicator(true);
             hideVerificationSection();
@@ -184,13 +207,22 @@ async function handleLogout() {
     
     try {
         const response = await fetch(`${API_BASE_URL}/api/logout`, {
-            method: 'POST'
+            method: 'POST',
+            credentials: 'include',
+            headers: currentSessionId ? {
+                'Cookie': `session_id=${currentSessionId}`
+            } : {}
         });
         
         const result = await response.json();
         
         isLoggedIn = false;
         currentUser = null;
+        currentSessionId = null;
+        
+        // Remove session from localStorage
+        localStorage.removeItem('session_id');
+        
         showLogin();
         updateStatusIndicator(false);
         resetDashboard();
@@ -220,6 +252,7 @@ async function handleLoadUsernames() {
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify({ usernames })
         });
         
@@ -272,6 +305,7 @@ async function handleSendMessages() {
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify({
                 usernames,
                 message,

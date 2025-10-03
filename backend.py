@@ -8,11 +8,13 @@ import os
 import json
 import asyncio
 import logging
+import uuid
+import time
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
@@ -30,6 +32,13 @@ class LoginRequest(BaseModel):
     password: str = Field(..., description="Instagram password")
     verification_code: Optional[str] = Field(None, description="Verification code if required")
     challenge_url: Optional[str] = Field(None, description="Challenge URL if verification is required")
+
+class SessionInfo(BaseModel):
+    session_id: str
+    username: str
+    created_at: datetime
+    last_activity: datetime
+    expires_at: datetime
 
 class MessageRequest(BaseModel):
     usernames: List[str] = Field(..., description="List of usernames to message")
@@ -59,9 +68,83 @@ class BotResponse(BaseModel):
     data: Optional[Any] = None
     challenge: Optional[ChallengeResponse] = None
 
-# Global bot instance
-bot_instance = None
-bot_status = BotStatus(is_logged_in=False)
+# Session management
+class SessionManager:
+    def __init__(self):
+        self.sessions: Dict[str, Dict[str, Any]] = {}
+        self.session_timeout = 3600  # 1 hour timeout
+        
+    def create_session(self, username: str) -> str:
+        """Create a new session for a user."""
+        session_id = str(uuid.uuid4())
+        now = datetime.now()
+        
+        self.sessions[session_id] = {
+            'username': username,
+            'created_at': now,
+            'last_activity': now,
+            'expires_at': now + timedelta(seconds=self.session_timeout),
+            'bot_manager': InstagramBotManager()
+        }
+        
+        logger.info(f"Created session {session_id} for user {username}")
+        return session_id
+    
+    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get session by ID if it exists and is not expired."""
+        if session_id not in self.sessions:
+            return None
+            
+        session = self.sessions[session_id]
+        
+        # Check if session is expired
+        if datetime.now() > session['expires_at']:
+            logger.info(f"Session {session_id} expired, removing")
+            del self.sessions[session_id]
+            return None
+            
+        return session
+    
+    def update_activity(self, session_id: str):
+        """Update last activity time for a session."""
+        if session_id in self.sessions:
+            self.sessions[session_id]['last_activity'] = datetime.now()
+    
+    def delete_session(self, session_id: str):
+        """Delete a session."""
+        if session_id in self.sessions:
+            username = self.sessions[session_id]['username']
+            logger.info(f"Deleting session {session_id} for user {username}")
+            del self.sessions[session_id]
+    
+    def cleanup_expired_sessions(self):
+        """Remove expired sessions."""
+        now = datetime.now()
+        expired_sessions = [
+            sid for sid, session in self.sessions.items() 
+            if now > session['expires_at']
+        ]
+        
+        for session_id in expired_sessions:
+            logger.info(f"Cleaning up expired session {session_id}")
+            del self.sessions[session_id]
+    
+    def get_active_sessions(self) -> List[SessionInfo]:
+        """Get list of active sessions."""
+        self.cleanup_expired_sessions()
+        return [
+            SessionInfo(
+                session_id=sid,
+                username=session['username'],
+                created_at=session['created_at'],
+                last_activity=session['last_activity'],
+                expires_at=session['expires_at']
+            )
+            for sid, session in self.sessions.items()
+        ]
+
+# Global session manager
+session_manager = SessionManager()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -117,12 +200,6 @@ class InstagramBotManager:
             self.client.dump_settings(self.session_file)
             self.is_logged_in = True
             self.username = username
-            
-            # Update global status
-            global bot_status
-            bot_status.is_logged_in = True
-            bot_status.username = username
-            bot_status.last_activity = datetime.now().isoformat()
             
             logger.info("Successfully logged in!")
             return True, None
@@ -225,8 +302,20 @@ class InstagramBotManager:
         
         return results
 
-# Initialize bot manager
-bot_manager = InstagramBotManager()
+# Helper function to get current session
+def get_current_session(session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Get current session from cookie or parameter."""
+    if not session_id:
+        return None
+    return session_manager.get_session(session_id)
+
+def get_current_bot_manager(session_id: Optional[str] = None) -> Optional[InstagramBotManager]:
+    """Get bot manager for current session."""
+    session = get_current_session(session_id)
+    if session:
+        session_manager.update_activity(session_id)
+        return session['bot_manager']
+    return None
 
 # API Routes
 @app.get("/", response_class=HTMLResponse)
@@ -235,14 +324,28 @@ async def read_root():
     return FileResponse("static/index.html")
 
 @app.get("/api/status", response_model=BotStatus)
-async def get_bot_status():
-    """Get current bot status."""
-    return bot_status
+async def get_bot_status(session_id: Optional[str] = Cookie(None)):
+    """Get current bot status for the session."""
+    session = get_current_session(session_id)
+    if session:
+        bot_manager = session['bot_manager']
+        return BotStatus(
+            is_logged_in=bot_manager.is_logged_in,
+            username=bot_manager.username,
+            last_activity=session['last_activity'].isoformat()
+        )
+    else:
+        return BotStatus(is_logged_in=False)
 
 @app.post("/api/login", response_model=BotResponse)
 async def login(request: LoginRequest):
     """Login to Instagram account."""
     try:
+        # Create new session for this user
+        session_id = session_manager.create_session(request.username)
+        session = session_manager.get_session(session_id)
+        bot_manager = session['bot_manager']
+        
         success, challenge = await bot_manager.login(
             request.username, 
             request.password, 
@@ -251,11 +354,12 @@ async def login(request: LoginRequest):
         )
         
         if success:
-            return BotResponse(
+            response = BotResponse(
                 success=True,
                 message="Successfully logged in!",
-                data={"username": request.username}
+                data={"username": request.username, "session_id": session_id}
             )
+            return response
         elif challenge:
             return BotResponse(
                 success=False,
@@ -263,6 +367,8 @@ async def login(request: LoginRequest):
                 challenge=challenge
             )
         else:
+            # Remove session if login failed
+            session_manager.delete_session(session_id)
             return BotResponse(
                 success=False,
                 message="Login failed"
@@ -273,24 +379,32 @@ async def login(request: LoginRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/logout", response_model=BotResponse)
-async def logout():
+async def logout(session_id: Optional[str] = Cookie(None)):
     """Logout from Instagram account."""
-    global bot_status
-    bot_manager.is_logged_in = False
-    bot_manager.username = None
-    bot_status.is_logged_in = False
-    bot_status.username = None
-    bot_status.last_activity = None
-    
-    return BotResponse(
-        success=True,
-        message="Successfully logged out!"
-    )
+    session = get_current_session(session_id)
+    if session:
+        bot_manager = session['bot_manager']
+        bot_manager.is_logged_in = False
+        bot_manager.username = None
+        
+        # Delete the session
+        session_manager.delete_session(session_id)
+        
+        return BotResponse(
+            success=True,
+            message="Successfully logged out!"
+        )
+    else:
+        return BotResponse(
+            success=False,
+            message="No active session found"
+        )
 
 @app.post("/api/send-messages", response_model=BotResponse)
-async def send_messages(request: MessageRequest, background_tasks: BackgroundTasks):
+async def send_messages(request: MessageRequest, background_tasks: BackgroundTasks, session_id: Optional[str] = Cookie(None)):
     """Send messages to a list of usernames."""
-    if not bot_manager.is_logged_in:
+    bot_manager = get_current_bot_manager(session_id)
+    if not bot_manager or not bot_manager.is_logged_in:
         raise HTTPException(status_code=401, detail="Not logged in. Please login first.")
     
     if not request.usernames:
@@ -307,15 +421,22 @@ async def send_messages(request: MessageRequest, background_tasks: BackgroundTas
             request.delay_range
         )
         
-        # Save results to file
+        # Save results to file with session info
+        session = get_current_session(session_id)
+        username = session['username'] if session else "unknown"
+        
         results_data = {
             "timestamp": datetime.now().isoformat(),
+            "username": username,
+            "session_id": session_id,
             "message": request.message,
             "total_users": len(request.usernames),
             "results": [{"username": r.username, "success": r.success, "error": r.error} for r in results]
         }
         
-        with open("message_results.json", "w") as f:
+        # Save with username prefix to avoid conflicts
+        results_filename = f"message_results_{username}_{int(time.time())}.json"
+        with open(results_filename, "w") as f:
             json.dump(results_data, f, indent=2)
         
         successful = sum(1 for r in results if r.success)
@@ -328,7 +449,8 @@ async def send_messages(request: MessageRequest, background_tasks: BackgroundTas
                 "total": len(request.usernames),
                 "successful": successful,
                 "failed": failed,
-                "results": results
+                "results": results,
+                "results_file": results_filename
             }
         )
         
@@ -337,14 +459,26 @@ async def send_messages(request: MessageRequest, background_tasks: BackgroundTas
         raise HTTPException(status_code=500, detail=f"Error sending messages: {str(e)}")
 
 @app.get("/api/results")
-async def get_results():
-    """Get latest message results."""
+async def get_results(session_id: Optional[str] = Cookie(None)):
+    """Get latest message results for the current session."""
+    session = get_current_session(session_id)
+    if not session:
+        raise HTTPException(status_code=401, detail="No active session")
+    
+    username = session['username']
+    
     try:
-        if os.path.exists("message_results.json"):
-            with open("message_results.json", "r") as f:
+        # Look for results files for this user
+        import glob
+        result_files = glob.glob(f"message_results_{username}_*.json")
+        
+        if result_files:
+            # Get the most recent file
+            latest_file = max(result_files, key=os.path.getctime)
+            with open(latest_file, "r") as f:
                 return json.load(f)
         else:
-            return {"message": "No results found"}
+            return {"message": "No results found for your session"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading results: {str(e)}")
 
@@ -381,6 +515,21 @@ async def upload_usernames(request: Request):
     except Exception as e:
         logger.error(f"Error uploading usernames: {e}")
         raise HTTPException(status_code=500, detail=f"Error uploading usernames: {str(e)}")
+
+@app.get("/api/sessions")
+async def get_active_sessions():
+    """Get list of active sessions (admin endpoint)."""
+    sessions = session_manager.get_active_sessions()
+    return {
+        "active_sessions": len(sessions),
+        "sessions": [session.dict() for session in sessions]
+    }
+
+@app.post("/api/cleanup-sessions")
+async def cleanup_sessions():
+    """Clean up expired sessions (admin endpoint)."""
+    session_manager.cleanup_expired_sessions()
+    return {"message": "Sessions cleaned up successfully"}
 
 @app.get("/api/health")
 async def health_check():
