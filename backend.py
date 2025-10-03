@@ -14,7 +14,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request, Cookie
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request, Cookie, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
@@ -324,9 +324,10 @@ async def read_root():
     return FileResponse("static/index.html")
 
 @app.get("/api/status", response_model=BotStatus)
-async def get_bot_status(session_id: Optional[str] = Cookie(None)):
+async def get_bot_status(session_id: Optional[str] = Cookie(None), x_session_id: Optional[str] = Header(None, alias="X-Session-ID")):
     """Get current bot status for the session."""
-    session = get_current_session(session_id)
+    effective_session_id = x_session_id or session_id
+    session = get_current_session(effective_session_id)
     if session:
         bot_manager = session['bot_manager']
         return BotStatus(
@@ -379,16 +380,17 @@ async def login(request: LoginRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/logout", response_model=BotResponse)
-async def logout(session_id: Optional[str] = Cookie(None)):
+async def logout(session_id: Optional[str] = Cookie(None), x_session_id: Optional[str] = Header(None, alias="X-Session-ID")):
     """Logout from Instagram account."""
-    session = get_current_session(session_id)
+    effective_session_id = x_session_id or session_id
+    session = get_current_session(effective_session_id)
     if session:
         bot_manager = session['bot_manager']
         bot_manager.is_logged_in = False
         bot_manager.username = None
         
         # Delete the session
-        session_manager.delete_session(session_id)
+        session_manager.delete_session(effective_session_id)
         
         return BotResponse(
             success=True,
@@ -401,9 +403,11 @@ async def logout(session_id: Optional[str] = Cookie(None)):
         )
 
 @app.post("/api/send-messages", response_model=BotResponse)
-async def send_messages(request: MessageRequest, background_tasks: BackgroundTasks, session_id: Optional[str] = Cookie(None)):
+async def send_messages(request: MessageRequest, background_tasks: BackgroundTasks, session_id: Optional[str] = Cookie(None), x_session_id: Optional[str] = Header(None, alias="X-Session-ID")):
     """Send messages to a list of usernames."""
-    bot_manager = get_current_bot_manager(session_id)
+    # Use header session ID if available, otherwise use cookie
+    effective_session_id = x_session_id or session_id
+    bot_manager = get_current_bot_manager(effective_session_id)
     if not bot_manager or not bot_manager.is_logged_in:
         raise HTTPException(status_code=401, detail="Not logged in. Please login first.")
     
@@ -422,13 +426,13 @@ async def send_messages(request: MessageRequest, background_tasks: BackgroundTas
         )
         
         # Save results to file with session info
-        session = get_current_session(session_id)
+        session = get_current_session(effective_session_id)
         username = session['username'] if session else "unknown"
         
         results_data = {
             "timestamp": datetime.now().isoformat(),
             "username": username,
-            "session_id": session_id,
+            "session_id": effective_session_id,
             "message": request.message,
             "total_users": len(request.usernames),
             "results": [{"username": r.username, "success": r.success, "error": r.error} for r in results]

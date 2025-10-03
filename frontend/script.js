@@ -110,9 +110,8 @@ async function checkBotStatus() {
         
         if (savedSessionId) {
             const response = await fetch(`${API_BASE_URL}/api/status`, {
-                credentials: 'include',
                 headers: {
-                    'Cookie': `session_id=${savedSessionId}`
+                    'X-Session-ID': savedSessionId
                 }
             });
             const status = await response.json();
@@ -208,9 +207,8 @@ async function handleLogout() {
     try {
         const response = await fetch(`${API_BASE_URL}/api/logout`, {
             method: 'POST',
-            credentials: 'include',
             headers: currentSessionId ? {
-                'Cookie': `session_id=${currentSessionId}`
+                'X-Session-ID': currentSessionId
             } : {}
         });
         
@@ -304,8 +302,8 @@ async function handleSendMessages() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                ...(currentSessionId ? { 'X-Session-ID': currentSessionId } : {})
             },
-            credentials: 'include',
             body: JSON.stringify({
                 usernames,
                 message,
